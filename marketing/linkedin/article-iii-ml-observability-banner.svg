@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="627" viewBox="0 0 1200 627" role="img" aria-labelledby="title desc">
+  <title id="title">Part III ML observability plane banner</title>
+  <desc id="desc">Editorial LinkedIn banner for an article about adding an ML observability plane to Azure, GCP, and AWS RAG agents.</desc>
+  <defs>
+    <linearGradient id="obsBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#03131a"/>
+      <stop offset="0.48" stop-color="#082f49"/>
+      <stop offset="1" stop-color="#1a0b2e"/>
+    </linearGradient>
+    <radialGradient id="obsPulse" cx="67%" cy="45%" r="58%">
+      <stop offset="0" stop-color="#67e8f9" stop-opacity="0.94"/>
+      <stop offset="0.34" stop-color="#0ea5e9" stop-opacity="0.48"/>
+      <stop offset="0.72" stop-color="#a855f7" stop-opacity="0.26"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <pattern id="scan" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M0 20H40 M20 0V40" stroke="#bae6fd" stroke-width="1" opacity="0.12"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="627" fill="url(#obsBg)"/>
+  <rect width="1200" height="627" fill="url(#scan)"/>
+  <rect width="1200" height="627" fill="url(#obsPulse)"/>
+  <g transform="translate(705 94)">
+    <rect x="0" y="0" width="330" height="340" rx="30" fill="#020617" stroke="#67e8f9" stroke-width="3"/>
+    <g filter="url(#glow)">
+      <path d="M36 246 C78 174, 125 280, 174 180 S251 95, 294 142" fill="none" stroke="#67e8f9" stroke-width="8" stroke-linecap="round"/>
+      <path d="M36 280 C88 262, 126 304, 176 265 S245 224, 294 246" fill="none" stroke="#f472b6" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="174" cy="180" r="14" fill="#f472b6"/>
+      <circle cx="251" cy="95" r="14" fill="#f472b6"/>
+    </g>
+    <text x="36" y="62" fill="#93c5fd" font-family="Menlo, Consolas, monospace" font-size="20" letter-spacing="2">DRIFT WATCH</text>
+    <text x="36" y="314" fill="#e0f2fe" font-family="Menlo, Consolas, monospace" font-size="18">isolation_forest: alert</text>
+  </g>
+  <g transform="translate(72 76)">
+    <text x="0" y="0" fill="#67e8f9" font-family="Menlo, Consolas, monospace" font-size="24" letter-spacing="4">PART III / ML OBSERVABILITY</text>
+    <text x="0" y="112" fill="#f8fafc" font-family="Georgia, 'Times New Roman', serif" font-weight="800" font-size="70" letter-spacing="-3">EVALS PASSED.</text>
+    <text x="0" y="190" fill="#f8fafc" font-family="Georgia, 'Times New Roman', serif" font-weight="800" font-size="70" letter-spacing="-3">PRODUCTION</text>
+    <text x="0" y="268" fill="#f8fafc" font-family="Georgia, 'Times New Roman', serif" font-weight="800" font-size="70" letter-spacing="-3">STILL DRIFTED.</text>
+    <text x="4" y="334" fill="#bae6fd" font-family="Menlo, Consolas, monospace" font-size="25">Isolation Forest. HHEM. KQL. BigQuery. Telemetry with teeth.</text>
+  </g>
+  <g transform="translate(75 514)">
+    <rect x="0" y="0" width="356" height="52" rx="26" fill="#67e8f9"/>
+    <text x="30" y="35" fill="#03131a" font-family="Menlo, Consolas, monospace" font-size="22" font-weight="800">TEACH HEALTHY SHAPE</text>
+  </g>
+  <text x="1118" y="568" fill="#cbd5e1" font-family="Menlo, Consolas, monospace" font-size="18" transform="rotate(-90 1118 568)">METAFIZIK</text>
+</svg>
