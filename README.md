@@ -1,14 +1,29 @@
 # GRIZL Fabric Observability
 
-Sanitized Microsoft Fabric Eventhouse/KQL observability package for a Cloud Run or similar structured-log pipeline.
+Public, sanitized Microsoft Fabric observability package for building an agentic incident-evidence loop on top of structured application telemetry.
 
-This repository contains only the public/shareable Fabric layer:
+This repo packages the Fabric side of the GRIZL observability architecture: Eventstream/Eventhouse ingestion, KQL logical views, Real-Time Dashboard queries, Activator/Reflex alert queries, Eventhouse-native anomaly signals, and Fabric Data Agent scaffolding for natural-language incident evidence retrieval over `RawLogs`. It is designed to pair with an external application/orchestrator service that receives Fabric alerts, asks Fabric Data Agent for evidence, creates GitHub issues, and assigns GitHub Copilot Coding Agent only when remediation is safe, scoped, and code-actionable.
+
+```text
+Application + frontend + deployment + forwarder telemetry
+  -> cloud logging sink / Pub/Sub
+  -> log forwarder
+  -> Fabric Eventstream
+  -> Eventhouse RawLogs
+  -> KQL views + anomaly functions
+  -> Activator / Reflex
+  -> external incident webhook
+  -> Fabric Data Agent MCP evidence query
+  -> GitHub issue + optional Copilot Coding Agent handoff
+```
+
+This repository contains only the public/shareable Fabric package:
 
 | Path | Purpose |
 |---|---|
 | `fabric/` | Fabric provisioning helpers, config templates, manifests, and dry-run-safe scripts |
 | `kql/` | Eventhouse KQL views, dashboard queries, Activator alert queries, and anomaly-signal functions |
-| `docs/fabric-incident-orchestrator.md` | Reference architecture for wiring Fabric Activator incidents to an external GitHub/Copilot remediation service |
+| `docs/fabric-incident-orchestrator.md` | Reference architecture for wiring Fabric Activator alerts to Fabric Data Agent evidence, GitHub issues, and Copilot remediation |
 
 No tenant secrets, Event Hubs connection strings, Fabric tokens, GitHub tokens, or live tenant IDs are included. Replace placeholder values such as `<FABRIC_TENANT_ID>`, `<FABRIC_WORKSPACE_ID>`, and `<FABRIC_EVENTHUB_NAME>` with values from your own tenant.
 
@@ -33,7 +48,7 @@ flowchart TB
     class app,logging,forwarder external;
 ```
 
-### Detection and response path
+### Detection, evidence, and response path
 
 ```mermaid
 flowchart TB
@@ -42,15 +57,20 @@ flowchart TB
     signals["KQL anomaly signals<br/>series_decompose_anomalies()"]
     activator["Fabric Activator / Reflex<br/>alert trigger"]
     webhook["Incident webhook<br/>external orchestrator"]
+    dataagent["Fabric Data Agent MCP<br/>read-only evidence over RawLogs/KQL"]
+    kusto["Direct Kusto fallback<br/>deterministic RawLogs evidence"]
     issue["GitHub issue<br/>evidence + anomaly fields"]
     copilot["Optional Copilot remediation<br/>policy gated"]
 
     views --> dashboard
-    views --> signals --> activator --> webhook --> issue --> copilot
+    views --> signals --> activator --> webhook
+    webhook --> dataagent --> issue
+    webhook --> kusto --> issue
+    issue --> copilot
 
     classDef fabric fill:#eef6ff,stroke:#3b82f6,color:#111827;
     classDef external fill:#f8fafc,stroke:#64748b,color:#111827;
-    class views,dashboard,signals,activator fabric;
+    class views,dashboard,signals,activator,dataagent,kusto fabric;
     class webhook,issue,copilot external;
 ```
 
@@ -62,6 +82,8 @@ The KQL artifacts assume a `RawLogs` Eventhouse table populated from structured 
 - dashboard tile queries for operational triage
 - Activator/Reflex alert queries
 - KQL-only anomaly signals using Eventhouse-native `series_decompose_anomalies()`
+- Fabric Data Agent provisioning/staging scaffolding for evidence Q&A over `RawLogs` and selected KQL functions
+- a reference external incident-orchestrator contract for alert normalization, GitHub issue creation, direct Kusto fallback evidence, and policy-gated Copilot assignment
 
 The anomaly-signal layer intentionally covers high-value production signals only:
 
@@ -101,7 +123,24 @@ The anomaly-signal layer intentionally covers high-value production signals only
    npm --prefix fabric run kusto:anomaly-signals
    ```
 
-See `fabric/README.md` for provisioning details and `docs/fabric-incident-orchestrator.md` for the incident-enrichment flow.
+See `fabric/README.md` for provisioning/Data Agent staging details and `docs/fabric-incident-orchestrator.md` for the incident-enrichment and Copilot handoff flow.
+
+## Fabric Data Agent role
+
+Fabric Data Agent is the read-only evidence layer. It is configured over the Eventhouse KQL database so an external orchestrator can ask incident-specific questions such as:
+
+- Which deployment SHA correlates with this new 5xx spike?
+- Which route, page, or error signature is driving the anomaly?
+- Did forwarder health degrade before the alert fired?
+- What validation KQL should an operator or Copilot-authored PR use after remediation?
+
+Data Agent does not create issues or execute remediation. The external orchestrator owns webhook authentication, repository mapping, GitHub issue creation, remediation policy, and Copilot Coding Agent assignment. Direct Kusto fallback remains part of the reference design so incident issues still get deterministic RawLogs evidence if the Data Agent runtime cannot access its datasource.
+
+## What is intentionally excluded
+
+- No tenant-specific Fabric item definitions with live IDs.
+- No Fabric tokens, Event Hubs connection strings, GitHub tokens, service-principal secrets, or webhook secrets.
+- No fake MLflow/model-registry workflow. The ML-observability layer here is KQL anomaly scoring over operational telemetry because that adds real incident value without inventing a model lifecycle.
 
 ## Security notes
 
