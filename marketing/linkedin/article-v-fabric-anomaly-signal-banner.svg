@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="627" viewBox="0 0 1200 627" role="img" aria-labelledby="title desc">
+  <title id="title">Part V Fabric anomaly signal banner</title>
+  <desc id="desc">Editorial banner for a LinkedIn article about Microsoft Fabric KQL anomaly signals and GitHub incident automation.</desc>
+  <defs>
+    <linearGradient id="fabricBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#04111f"/>
+      <stop offset="0.42" stop-color="#072b47"/>
+      <stop offset="1" stop-color="#0d0b1f"/>
+    </linearGradient>
+    <radialGradient id="hotCore" cx="68%" cy="48%" r="52%">
+      <stop offset="0" stop-color="#39ffcf" stop-opacity="0.95"/>
+      <stop offset="0.38" stop-color="#1688ff" stop-opacity="0.48"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <pattern id="grid" width="42" height="42" patternUnits="userSpaceOnUse">
+      <path d="M42 0H0V42" fill="none" stroke="#7dd3fc" stroke-width="1" stroke-opacity="0.12"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="627" fill="url(#fabricBg)"/>
+  <rect width="1200" height="627" fill="url(#grid)"/>
+  <rect width="1200" height="627" fill="url(#hotCore)"/>
+  <path d="M-40 480 C180 380, 255 535, 430 420 S710 305, 905 250 S1110 165, 1260 210" fill="none" stroke="#39ffcf" stroke-width="5" stroke-opacity="0.86" filter="url(#glow)"/>
+  <path d="M-30 522 C180 430, 270 560, 435 455 S705 360, 910 305 S1105 230, 1240 270" fill="none" stroke="#ff2bd6" stroke-width="3" stroke-opacity="0.82"/>
+  <g opacity="0.92">
+    <rect x="764" y="92" width="288" height="288" rx="28" fill="#020617" stroke="#39ffcf" stroke-width="2"/>
+    <path d="M805 314 L856 236 L909 276 L970 178 L1012 222" fill="none" stroke="#39ffcf" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="856" cy="236" r="12" fill="#ff2bd6"/>
+    <circle cx="909" cy="276" r="12" fill="#ff2bd6"/>
+    <circle cx="970" cy="178" r="12" fill="#ff2bd6"/>
+    <text x="804" y="137" fill="#93c5fd" font-family="Menlo, Consolas, monospace" font-size="20" letter-spacing="2">ANOMALY</text>
+    <text x="805" y="360" fill="#e0f2fe" font-family="Menlo, Consolas, monospace" font-size="18">score: 2.91</text>
+  </g>
+  <g transform="translate(72 78)">
+    <text x="0" y="0" fill="#39ffcf" font-family="Menlo, Consolas, monospace" font-size="24" letter-spacing="4">PART V / MICROSOFT FABRIC</text>
+    <text x="0" y="112" fill="#f8fafc" font-family="Georgia, 'Times New Roman', serif" font-weight="800" font-size="74" letter-spacing="-3">I GAVE FABRIC</text>
+    <text x="0" y="194" fill="#f8fafc" font-family="Georgia, 'Times New Roman', serif" font-weight="800" font-size="74" letter-spacing="-3">A PANIC BUTTON</text>
+    <text x="3" y="260" fill="#bae6fd" font-family="Menlo, Consolas, monospace" font-size="26">KQL anomaly signals that file issues with receipts.</text>
+  </g>
+  <g transform="translate(75 500)">
+    <rect x="0" y="0" width="360" height="56" rx="28" fill="#39ffcf"/>
+    <text x="30" y="37" fill="#03141f" font-family="Menlo, Consolas, monospace" font-size="22" font-weight="800">EVENTHOUSE -> ACTIVATOR -> GITHUB</text>
+  </g>
+  <text x="1118" y="568" fill="#94a3b8" font-family="Menlo, Consolas, monospace" font-size="18" transform="rotate(-90 1118 568)">METAFIZIK</text>
+</svg>
