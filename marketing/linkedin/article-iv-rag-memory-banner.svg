@@ -37,7 +37,7 @@
     <circle cx="236" cy="270" r="34" fill="#22d3ee"/>
     <path d="M75 118 L120 145 M225 118 L180 145 M99 252 L123 204 M215 252 L177 204" stroke="#f8fafc" stroke-width="5" stroke-linecap="round"/>
     <text x="104" y="174" fill="#f8fafc" font-family="Menlo, Consolas, monospace" font-size="18" font-weight="800">MEMORY</text>
-    <text x="45" y="344" fill="#f5d0fe" font-family="Menlo, Consolas, monospace" font-size="18">scoped != source_of_truth</text>
+    <text x="-6" y="382" fill="#f5d0fe" font-family="Menlo, Consolas, monospace" font-size="18">scoped memory, not source truth</text>
   </g>
   <g transform="translate(72 76)">
     <text x="0" y="0" fill="#f0abfc" font-family="Menlo, Consolas, monospace" font-size="24" letter-spacing="4">PART IV / RAG MEMORY</text>
