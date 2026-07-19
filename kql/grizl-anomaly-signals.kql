@@ -1,0 +1,463 @@
+// =============================================================================
+// GRIZL Fabric ML-observability anomaly signals — grizl-house KQL Database
+// Source table: RawLogs (source-of-truth landing table)
+// =============================================================================
+// How to apply:
+//   npm --prefix fabric run kusto:anomaly-signals:dry-run
+//   npm --prefix fabric run kusto:anomaly-signals
+//
+// This is intentionally KQL-only. It creates operator-editable Eventhouse
+// functions that Activator/Reflex can query. No MLflow/model registry assets are
+// required for these production observability signals.
+//
+// Activator setup:
+//   1. Create a trigger per function or use GrizlRecentAnomalySignals().
+//   2. Alert when the query returns at least one row.
+//   3. Send the projected columns in the webhook payload. The backend incident
+//      orchestrator recognizes signalName, anomalyScore, baseline, actual,
+//      expected, timeWindowStart, timeWindowEnd, dimensions, kqlFunction, and
+//      kqlQueryRef when present.
+//
+// Requires base logical views from kql/grizl-observability.kql:
+//   HttpRequests(), ApplicationErrors(), Deployments(), ForwarderHealth()
+// =============================================================================
+
+.execute database script <|
+
+.create-or-alter function with (
+    docstring = "Positive anomalies in backend HTTP 5xx/error rate by service and route.",
+    folder = "AnomalySignals"
+)
+BackendHttpErrorRateAnomalies(
+    lookback:timespan = 2d,
+    recentWindow:timespan = 15m,
+    grain:timespan = 5m,
+    minRequests:long = 20,
+    scoreThreshold:real = 1.5
+) {
+    HttpRequests()
+    | where ingestTimestamp between (ago(lookback) .. now())
+    | where isnotempty(service) and isnotempty(route)
+    | summarize
+        Requests = count(),
+        Errors = countif(statusCode >= 500 or severity in ("ERROR", "CRITICAL"))
+      by TimeBin = bin(ingestTimestamp, grain), service, route
+    | extend ErrorRate = iif(Requests == 0, real(0), todouble(Errors) / todouble(Requests))
+    | make-series
+        ActualSeries = avg(ErrorRate),
+        RequestSeries = sum(Requests),
+        ErrorSeries = sum(Errors)
+        default = 0
+      on TimeBin from bin(ago(lookback), grain) to bin(now(), grain) step grain
+      by service, route
+    | extend (AnomalyFlags, AnomalyScores, BaselineSeries) =
+        series_decompose_anomalies(ActualSeries, scoreThreshold, -1, "linefit")
+    | mv-expand
+        TimeBin to typeof(datetime),
+        ActualSeries to typeof(real),
+        RequestSeries to typeof(long),
+        ErrorSeries to typeof(long),
+        AnomalyFlags to typeof(long),
+        AnomalyScores to typeof(real),
+        BaselineSeries to typeof(real)
+    | where TimeBin >= ago(recentWindow)
+    | where AnomalyFlags > 0 and RequestSeries >= minRequests
+    | extend
+        signalName = "backend_http_error_rate",
+        severity = iif(ActualSeries >= 0.25 or ErrorSeries >= 10, "critical", "error"),
+        anomalyScore = round(AnomalyScores, 3),
+        actual = round(ActualSeries, 4),
+        baseline = round(BaselineSeries, 4),
+        expected = round(BaselineSeries, 4),
+        alertName = "Backend HTTP Error Rate Anomaly",
+        anomalyType = "APPLICATION_ERROR",
+        timeWindowStart = TimeBin,
+        timeWindowEnd = TimeBin + grain,
+        dimensions = bag_pack("service", service, "route", route),
+        kqlFunction = "BackendHttpErrorRateAnomalies",
+        kqlQueryRef = "kql/grizl-anomaly-signals.kql#BackendHttpErrorRateAnomalies"
+    | project
+        ingestTimestamp = TimeBin,
+        alertName,
+        severity,
+        anomalyType,
+        signalName,
+        service,
+        route,
+        anomalyScore,
+        baseline,
+        actual,
+        expected,
+        Total = RequestSeries,
+        Errors = ErrorSeries,
+        timeWindowStart,
+        timeWindowEnd,
+        dimensions,
+        kqlFunction,
+        kqlQueryRef
+}
+
+.create-or-alter function with (
+    docstring = "Positive anomalies in route p95 latency by service and route. Returns no rows when durationMs is not populated.",
+    folder = "AnomalySignals"
+)
+RouteLatencyAnomalies(
+    lookback:timespan = 2d,
+    recentWindow:timespan = 15m,
+    grain:timespan = 5m,
+    minRequests:long = 20,
+    minP95Ms:real = 1000,
+    scoreThreshold:real = 1.5
+) {
+    HttpRequests()
+    | where ingestTimestamp between (ago(lookback) .. now())
+    | where isnotempty(service) and isnotempty(route)
+    | extend durationMsReal = todouble(durationMs)
+    | where isnotnull(durationMsReal) and durationMsReal >= 0
+    | summarize
+        Requests = count(),
+        P95Ms = percentile(durationMsReal, 95)
+      by TimeBin = bin(ingestTimestamp, grain), service, route
+    | make-series
+        ActualSeries = avg(P95Ms),
+        RequestSeries = sum(Requests)
+        default = 0
+      on TimeBin from bin(ago(lookback), grain) to bin(now(), grain) step grain
+      by service, route
+    | extend (AnomalyFlags, AnomalyScores, BaselineSeries) =
+        series_decompose_anomalies(ActualSeries, scoreThreshold, -1, "linefit")
+    | mv-expand
+        TimeBin to typeof(datetime),
+        ActualSeries to typeof(real),
+        RequestSeries to typeof(long),
+        AnomalyFlags to typeof(long),
+        AnomalyScores to typeof(real),
+        BaselineSeries to typeof(real)
+    | where TimeBin >= ago(recentWindow)
+    | where AnomalyFlags > 0 and RequestSeries >= minRequests and ActualSeries >= minP95Ms
+    | extend
+        signalName = "route_latency_p95",
+        severity = iif(ActualSeries >= 5000, "critical", "warning"),
+        anomalyScore = round(AnomalyScores, 3),
+        actual = round(ActualSeries, 2),
+        baseline = round(BaselineSeries, 2),
+        expected = round(BaselineSeries, 2),
+        alertName = "Route Latency Anomaly",
+        anomalyType = "HIGH_LATENCY",
+        timeWindowStart = TimeBin,
+        timeWindowEnd = TimeBin + grain,
+        dimensions = bag_pack("service", service, "route", route, "metric", "p95_duration_ms"),
+        kqlFunction = "RouteLatencyAnomalies",
+        kqlQueryRef = "kql/grizl-anomaly-signals.kql#RouteLatencyAnomalies"
+    | project
+        ingestTimestamp = TimeBin,
+        alertName,
+        severity,
+        anomalyType,
+        signalName,
+        service,
+        route,
+        anomalyScore,
+        baseline,
+        actual,
+        expected,
+        Total = RequestSeries,
+        timeWindowStart,
+        timeWindowEnd,
+        dimensions,
+        kqlFunction,
+        kqlQueryRef
+}
+
+.create-or-alter function with (
+    docstring = "Positive anomalies in grouped application error signatures.",
+    folder = "AnomalySignals"
+)
+ErrorSignatureSpikeAnomalies(
+    lookback:timespan = 2d,
+    recentWindow:timespan = 15m,
+    grain:timespan = 5m,
+    minOccurrences:long = 3,
+    scoreThreshold:real = 1.5
+) {
+    ApplicationErrors()
+    | where ingestTimestamp between (ago(lookback) .. now())
+    | where isnotempty(service) and isnotempty(errorSignature)
+    | summarize Occurrences = count()
+      by TimeBin = bin(ingestTimestamp, grain), service, route, errorType, errorSignature
+    | make-series ActualSeries = sum(Occurrences) default = 0
+      on TimeBin from bin(ago(lookback), grain) to bin(now(), grain) step grain
+      by service, route, errorType, errorSignature
+    | extend (AnomalyFlags, AnomalyScores, BaselineSeries) =
+        series_decompose_anomalies(ActualSeries, scoreThreshold, -1, "linefit")
+    | mv-expand
+        TimeBin to typeof(datetime),
+        ActualSeries to typeof(long),
+        AnomalyFlags to typeof(long),
+        AnomalyScores to typeof(real),
+        BaselineSeries to typeof(real)
+    | where TimeBin >= ago(recentWindow)
+    | where AnomalyFlags > 0 and ActualSeries >= minOccurrences
+    | extend
+        signalName = "error_signature_spike",
+        severity = iif(ActualSeries >= 10, "critical", "error"),
+        anomalyScore = round(AnomalyScores, 3),
+        actual = todouble(ActualSeries),
+        baseline = round(BaselineSeries, 2),
+        expected = round(BaselineSeries, 2),
+        alertName = "Error Signature Spike",
+        anomalyType = "APPLICATION_ERROR",
+        timeWindowStart = TimeBin,
+        timeWindowEnd = TimeBin + grain,
+        dimensions = bag_pack("service", service, "route", route, "errorType", errorType, "errorSignature", errorSignature),
+        kqlFunction = "ErrorSignatureSpikeAnomalies",
+        kqlQueryRef = "kql/grizl-anomaly-signals.kql#ErrorSignatureSpikeAnomalies"
+    | project
+        ingestTimestamp = TimeBin,
+        alertName,
+        severity,
+        anomalyType,
+        signalName,
+        service,
+        route,
+        errorType,
+        errorSignature,
+        anomalyScore,
+        baseline,
+        actual,
+        expected,
+        timeWindowStart,
+        timeWindowEnd,
+        dimensions,
+        kqlFunction,
+        kqlQueryRef
+}
+
+.create-or-alter function with (
+    docstring = "Negative anomalies in forwarder healthy event volume, indicating freshness/drop risk.",
+    folder = "AnomalySignals"
+)
+ForwarderFreshnessDropAnomalies(
+    lookback:timespan = 2d,
+    recentWindow:timespan = 15m,
+    grain:timespan = 5m,
+    scoreThreshold:real = 1.5
+) {
+    let LastSeen =
+        toscalar(
+            ForwarderHealth()
+            | where eventType in ("forwarder_start", "batch_sent", "batch_acked", "health_check", "ready_check")
+            | summarize max(ingestTimestamp)
+        );
+    ForwarderHealth()
+    | where ingestTimestamp between (ago(lookback) .. now())
+    | where eventType in ("forwarder_start", "batch_sent", "batch_acked", "health_check", "ready_check")
+    | summarize Events = count() by TimeBin = bin(ingestTimestamp, grain), service
+    | make-series ActualSeries = sum(Events) default = 0
+      on TimeBin from bin(ago(lookback), grain) to bin(now(), grain) step grain
+      by service
+    | extend (AnomalyFlags, AnomalyScores, BaselineSeries) =
+        series_decompose_anomalies(ActualSeries, scoreThreshold, -1, "linefit")
+    | mv-expand
+        TimeBin to typeof(datetime),
+        ActualSeries to typeof(long),
+        AnomalyFlags to typeof(long),
+        AnomalyScores to typeof(real),
+        BaselineSeries to typeof(real)
+    | where TimeBin >= ago(recentWindow)
+    | where AnomalyFlags < 0 or (ActualSeries == 0 and BaselineSeries >= 1)
+    | extend
+        signalName = "forwarder_freshness_drop",
+        severity = "warning",
+        anomalyScore = round(abs(AnomalyScores), 3),
+        actual = todouble(ActualSeries),
+        baseline = round(BaselineSeries, 2),
+        expected = round(BaselineSeries, 2),
+        alertName = "Forwarder Freshness Drop Anomaly",
+        anomalyType = "FORWARDER_STALE",
+        timeWindowStart = TimeBin,
+        timeWindowEnd = TimeBin + grain,
+        minutesSinceLastSeen = datetime_diff("minute", now(), LastSeen),
+        dimensions = bag_pack("service", service, "lastSeen", LastSeen, "minutesSinceLastSeen", minutesSinceLastSeen),
+        kqlFunction = "ForwarderFreshnessDropAnomalies",
+        kqlQueryRef = "kql/grizl-anomaly-signals.kql#ForwarderFreshnessDropAnomalies"
+    | project
+        ingestTimestamp = TimeBin,
+        alertName,
+        severity,
+        anomalyType,
+        signalName,
+        service,
+        anomalyScore,
+        baseline,
+        actual,
+        expected,
+        LastSeen,
+        minutesSinceLastSeen,
+        timeWindowStart,
+        timeWindowEnd,
+        dimensions,
+        kqlFunction,
+        kqlQueryRef
+}
+
+.create-or-alter function with (
+    docstring = "Positive anomalies in forwarder skipped/failure events, indicating delivery loss risk.",
+    folder = "AnomalySignals"
+)
+ForwarderDropFailureAnomalies(
+    lookback:timespan = 2d,
+    recentWindow:timespan = 15m,
+    grain:timespan = 5m,
+    scoreThreshold:real = 1.5
+) {
+    ForwarderHealth()
+    | where ingestTimestamp between (ago(lookback) .. now())
+    | where eventType in ("message_skipped", "batch_retry", "batch_nack", "batch_failed")
+       or severity in ("ERROR", "CRITICAL")
+    | summarize Failures = count() by TimeBin = bin(ingestTimestamp, grain), service, eventType
+    | make-series ActualSeries = sum(Failures) default = 0
+      on TimeBin from bin(ago(lookback), grain) to bin(now(), grain) step grain
+      by service, eventType
+    | extend (AnomalyFlags, AnomalyScores, BaselineSeries) =
+        series_decompose_anomalies(ActualSeries, scoreThreshold, -1, "linefit")
+    | mv-expand
+        TimeBin to typeof(datetime),
+        ActualSeries to typeof(long),
+        AnomalyFlags to typeof(long),
+        AnomalyScores to typeof(real),
+        BaselineSeries to typeof(real)
+    | where TimeBin >= ago(recentWindow)
+    | where AnomalyFlags > 0 and ActualSeries > 0
+    | extend
+        signalName = "forwarder_drop_failure_spike",
+        severity = iif(ActualSeries >= 5, "error", "warning"),
+        anomalyScore = round(AnomalyScores, 3),
+        actual = todouble(ActualSeries),
+        baseline = round(BaselineSeries, 2),
+        expected = round(BaselineSeries, 2),
+        alertName = "Forwarder Drop/Failure Anomaly",
+        anomalyType = "FORWARDER_FAILURE",
+        timeWindowStart = TimeBin,
+        timeWindowEnd = TimeBin + grain,
+        dimensions = bag_pack("service", service, "eventType", eventType),
+        kqlFunction = "ForwarderDropFailureAnomalies",
+        kqlQueryRef = "kql/grizl-anomaly-signals.kql#ForwarderDropFailureAnomalies"
+    | project
+        ingestTimestamp = TimeBin,
+        alertName,
+        severity,
+        anomalyType,
+        signalName,
+        service,
+        eventType,
+        anomalyScore,
+        baseline,
+        actual,
+        expected,
+        timeWindowStart,
+        timeWindowEnd,
+        dimensions,
+        kqlFunction,
+        kqlQueryRef
+}
+
+.create-or-alter function with (
+    docstring = "Service error-rate anomalies that occur shortly after a deployment SHA was observed.",
+    folder = "AnomalySignals"
+)
+PostDeploymentRegressionAnomalies(
+    lookback:timespan = 7d,
+    recentWindow:timespan = 30m,
+    grain:timespan = 5m,
+    postDeploymentWindow:timespan = 2h,
+    minRequests:long = 20,
+    scoreThreshold:real = 1.5
+) {
+    let DeploymentBins =
+        Deployments()
+        | where ingestTimestamp between (ago(lookback) .. now())
+        | extend deploymentShaText = tostring(deploymentSha)
+        | where isnotempty(service) and isnotempty(deploymentShaText)
+        | summarize DeployedAt = min(ingestTimestamp) by service, deploymentSha = deploymentShaText;
+    let ErrorRateAnomalies =
+        HttpRequests()
+        | where ingestTimestamp between (ago(lookback) .. now())
+        | where isnotempty(service)
+        | summarize
+            Requests = count(),
+            Errors = countif(statusCode >= 500 or severity in ("ERROR", "CRITICAL"))
+          by TimeBin = bin(ingestTimestamp, grain), service
+        | extend ErrorRate = iif(Requests == 0, real(0), todouble(Errors) / todouble(Requests))
+        | make-series
+            ActualSeries = avg(ErrorRate),
+            RequestSeries = sum(Requests),
+            ErrorSeries = sum(Errors)
+            default = 0
+          on TimeBin from bin(ago(lookback), grain) to bin(now(), grain) step grain
+          by service
+        | extend (AnomalyFlags, AnomalyScores, BaselineSeries) =
+            series_decompose_anomalies(ActualSeries, scoreThreshold, -1, "linefit")
+        | mv-expand
+            TimeBin to typeof(datetime),
+            ActualSeries to typeof(real),
+            RequestSeries to typeof(long),
+            ErrorSeries to typeof(long),
+            AnomalyFlags to typeof(long),
+            AnomalyScores to typeof(real),
+            BaselineSeries to typeof(real)
+        | where TimeBin >= ago(recentWindow)
+        | where AnomalyFlags > 0 and RequestSeries >= minRequests;
+    ErrorRateAnomalies
+    | join kind=inner DeploymentBins on service
+    | where TimeBin between (DeployedAt .. DeployedAt + postDeploymentWindow)
+    | extend
+        signalName = "post_deployment_regression",
+        severity = iif(ActualSeries >= 0.25 or ErrorSeries >= 10, "critical", "error"),
+        anomalyScore = round(AnomalyScores, 3),
+        actual = round(ActualSeries, 4),
+        baseline = round(BaselineSeries, 4),
+        expected = round(BaselineSeries, 4),
+        alertName = "Post-Deployment Regression Anomaly",
+        anomalyType = "POST_DEPLOYMENT_ERROR",
+        timeWindowStart = TimeBin,
+        timeWindowEnd = TimeBin + grain,
+        dimensions = bag_pack("service", service, "deploymentSha", deploymentSha, "deployedAt", DeployedAt),
+        kqlFunction = "PostDeploymentRegressionAnomalies",
+        kqlQueryRef = "kql/grizl-anomaly-signals.kql#PostDeploymentRegressionAnomalies"
+    | project
+        ingestTimestamp = TimeBin,
+        alertName,
+        severity,
+        anomalyType,
+        signalName,
+        service,
+        deploymentSha,
+        DeployedAt,
+        anomalyScore,
+        baseline,
+        actual,
+        expected,
+        Total = RequestSeries,
+        Errors = ErrorSeries,
+        timeWindowStart,
+        timeWindowEnd,
+        dimensions,
+        kqlFunction,
+        kqlQueryRef
+}
+
+.create-or-alter function with (
+    docstring = "Union of high-value GRIZL anomaly signals for Activator triggers.",
+    folder = "AnomalySignals"
+)
+GrizlRecentAnomalySignals() {
+    union isfuzzy=true
+        BackendHttpErrorRateAnomalies(),
+        RouteLatencyAnomalies(),
+        ErrorSignatureSpikeAnomalies(),
+        ForwarderFreshnessDropAnomalies(),
+        ForwarderDropFailureAnomalies(),
+        PostDeploymentRegressionAnomalies()
+    | order by anomalyScore desc, ingestTimestamp desc
+}

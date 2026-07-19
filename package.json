@@ -1,0 +1,11 @@
+{
+  "name": "grizl-fabric-observability",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Sanitized Microsoft Fabric Eventhouse/KQL observability and anomaly-signal package for GRIZL-style telemetry pipelines.",
+  "license": "UNLICENSED",
+  "scripts": {
+    "fabric:check": "npm --prefix fabric run check",
+    "fabric:kusto:anomaly-signals:dry-run": "npm --prefix fabric run kusto:anomaly-signals:dry-run"
+  }
+}

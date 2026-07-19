@@ -1,0 +1,202 @@
+// =============================================================================
+// GRIZL-008: Fabric Activator Alert KQL Definitions — grizl-house KQL Database
+// Source table: RawLogs (source-of-truth landing table)
+// Workspace: grizl-stream  |  Eventhouse: grizl-house
+// =============================================================================
+// How to use:
+//   1. Open the Fabric Activator item in the grizl-stream workspace.
+//   2. Create a new Activator trigger for each alert below.
+//   3. In the trigger editor, select "Eventhouse" as the data source
+//      and choose the grizl-house KQL database.
+//   4. Paste the relevant query section into the KQL query field.
+//   5. Set the alert condition to: "table has at least 1 row".
+//   6. Set the check interval as noted per alert.
+//   7. Configure the action (email / Teams / Slack notification).
+//   8. Save and activate the trigger.
+//
+// Note: All queries use the confirmed KQL functions from grizl-house:
+//   HttpRequests(), FrontendTelemetry(), ApplicationErrors(),
+//   Deployments(), ForwarderHealth()
+// These functions must exist in grizl-house before Activator can use them.
+// Function definitions: kql/grizl-observability.kql (LOGICAL VIEW DEFINITIONS)
+//
+// Note: RawLogs has no top-level "message" column.
+//   Forwarder health signals use eventType, errorMessage, and rawEnvelope.
+//   deploymentSha is a UID/GUID field — cast to string with tostring() where needed.
+// =============================================================================
+
+
+// ── ALERT 1: Backend HTTP Error Spike ────────────────────────────────────────
+// Alert name:     Backend HTTP Error Spike
+// Description:    Fires when the 5xx/ERROR/CRITICAL rate across a service
+//                 exceeds 10 % over the last 10 minutes AND there are at least
+//                 20 total requests — guards against spurious alerts on low traffic.
+// Check interval: Every 5 minutes
+// Condition:      Alert fires when this query returns at least 1 row.
+// Threshold:      Total >= 20 AND ErrorRate >= 0.10 (10 %)
+// Tune to reduce noise: raise Total to 50 or ErrorRate to 0.20 for production.
+
+HttpRequests()
+| where ingestTimestamp > ago(10m)
+| summarize
+    Total=count(),
+    Errors=countif(statusCode >= 500 or severity in ("ERROR", "CRITICAL"))
+  by service
+| extend ErrorRate = todouble(Errors) / todouble(Total)
+| where Total >= 20 and ErrorRate >= 0.10
+| project service, Total, Errors, ErrorRate
+
+
+// ── ALERT 2: Frontend API Error Spike ────────────────────────────────────────
+// Alert name:     Frontend API Error Spike
+// Description:    Fires when browser/API error events from grizl-frontend reach
+//                 5 or more occurrences for the same page+errorType pair within
+//                 the last 10 minutes.
+// Check interval: Every 5 minutes
+// Condition:      Alert fires when this query returns at least 1 row.
+// Threshold:      Errors >= 5 per page/errorType bucket.
+// Tune to reduce noise: raise the threshold to 10 for production.
+
+FrontendTelemetry()
+| where ingestTimestamp > ago(10m)
+| where eventType == "api_error" or severity in ("ERROR", "CRITICAL")
+| summarize Errors=count() by page, errorType
+| where Errors >= 5
+| order by Errors desc
+
+
+// ── ALERT 3: Repeated Application Error Signature ─────────────────────────────
+// Alert name:     Repeated Application Error Signature
+// Description:    Fires when the same backend errorSignature (errorType:route)
+//                 occurs 3 or more times within the last 15 minutes, indicating
+//                 a recurring rather than transient failure.
+// Check interval: Every 5 minutes
+// Condition:      Alert fires when this query returns at least 1 row.
+// Threshold:      Occurrences >= 3 per service/errorType/errorSignature.
+// Tune to reduce noise: raise Occurrences to 5 for production.
+
+ApplicationErrors()
+| where ingestTimestamp > ago(15m)
+| summarize Occurrences=count() by service, errorType, errorSignature
+| where Occurrences >= 3
+| order by Occurrences desc
+
+
+// ── ALERT 4: Post-Deployment Error Increase ──────────────────────────────────
+// Alert name:     Post-Deployment Error Increase
+// Description:    Fires when a specific deployment SHA accumulates 3 or more
+//                 ERROR/CRITICAL events in the last 30 minutes — surfaces
+//                 regressions introduced by a recent deploy.
+// Check interval: Every 10 minutes
+// Condition:      Alert fires when this query returns at least 1 row.
+// Threshold:      Errors >= 3 per deploymentSha/service.
+// Note:           deploymentSha is a UID/GUID column in Fabric; cast to string
+//                 with tostring() before filtering or projecting.
+// Tune to reduce noise: raise Errors to 5 or extend the window to ago(60m).
+
+RawLogs
+| where ingestTimestamp > ago(30m)
+| extend deploymentShaText = tostring(deploymentSha)
+| where isnotempty(deploymentShaText)
+| summarize
+    Total=count(),
+    Errors=countif(severity in ("ERROR", "CRITICAL"))
+  by deploymentShaText, service
+| where Errors >= 3
+| order by Errors desc
+
+
+// ── ALERT 5: Forwarder Stale — No Recent Health Events ───────────────────────
+// Alert name:     Forwarder Stale
+// Description:    Fires when no ForwarderHealth() event has been seen in the
+//                 last 10 minutes, which may indicate the grizl-log-forwarder
+//                 service is down, crashing, or has lost its Pub/Sub subscription.
+// Check interval: Every 5 minutes
+// Condition:      Alert fires when this query returns at least 1 row.
+// Alternate:      If Fabric does not support isempty() for datetime in this
+//                 context, replace "isempty(LastSeen)" with "isnull(LastSeen)".
+
+ForwarderHealth()
+| summarize LastSeen=max(ingestTimestamp)
+| extend MinutesSinceLastSeen = datetime_diff("minute", now(), LastSeen)
+| where isnull(LastSeen) or MinutesSinceLastSeen > 10
+
+// -- Alternate form using isempty() — use if isnull() is not supported:
+// ForwarderHealth()
+// | summarize LastSeen=max(ingestTimestamp)
+// | extend MinutesSinceLastSeen = datetime_diff("minute", now(), LastSeen)
+// | where isempty(LastSeen) or MinutesSinceLastSeen > 10
+
+
+// ── ALERT 6: Forwarder Skipped / Failure Events ──────────────────────────────
+// Alert name:     Forwarder Failure Events
+// Description:    Fires when the log forwarder emits any message_skipped,
+//                 batch_retry, batch_nack, or batch_failed events, or any
+//                 ERROR/CRITICAL severity events, within the last 15 minutes.
+//                 Even a single failure event warrants investigation as it
+//                 may indicate message loss in the pipeline.
+// Check interval: Every 5 minutes
+// Condition:      Alert fires when this query returns at least 1 row (Count > 0).
+// Note:           Uses eventType and severity — not a top-level "message" column.
+
+ForwarderHealth()
+| where ingestTimestamp > ago(15m)
+| where eventType in ("message_skipped", "batch_retry", "batch_nack", "batch_failed")
+   or severity in ("ERROR", "CRITICAL")
+| summarize Count=count() by eventType, severity
+| where Count > 0
+
+
+// =============================================================================
+// VALIDATION QUERIES
+// Run these in the Fabric KQL editor to confirm each alert query returns the
+// expected result before activating the Activator triggers.
+// =============================================================================
+
+// -- Alert 1 validation: no rows when backend is healthy
+HttpRequests()
+| where ingestTimestamp > ago(10m)
+| summarize
+    Total=count(),
+    Errors=countif(statusCode >= 500 or severity in ("ERROR", "CRITICAL"))
+  by service
+| extend ErrorRate = todouble(Errors) / todouble(Total)
+| where Total >= 20 and ErrorRate >= 0.10
+
+// -- Alert 2 validation: no rows when frontend is healthy
+FrontendTelemetry()
+| where ingestTimestamp > ago(10m)
+| where eventType == "api_error" or severity in ("ERROR", "CRITICAL")
+| summarize Errors=count() by page, errorType
+| where Errors >= 5
+
+// -- Alert 3 validation: no rows when errors are not repeating
+ApplicationErrors()
+| where ingestTimestamp > ago(15m)
+| summarize Occurrences=count() by service, errorType, errorSignature
+| where Occurrences >= 3
+
+// -- Alert 4 validation: no rows when latest deploy is clean
+RawLogs
+| where ingestTimestamp > ago(30m)
+| extend deploymentShaText = tostring(deploymentSha)
+| where isnotempty(deploymentShaText)
+| summarize
+    Total=count(),
+    Errors=countif(severity in ("ERROR", "CRITICAL"))
+  by deploymentShaText, service
+| where Errors >= 3
+
+// -- Alert 5 validation: no rows when forwarder is running
+ForwarderHealth()
+| summarize LastSeen=max(ingestTimestamp)
+| extend MinutesSinceLastSeen = datetime_diff("minute", now(), LastSeen)
+| where isnull(LastSeen) or MinutesSinceLastSeen > 10
+
+// -- Alert 6 validation: no rows when forwarder has no failures
+ForwarderHealth()
+| where ingestTimestamp > ago(15m)
+| where eventType in ("message_skipped", "batch_retry", "batch_nack", "batch_failed")
+   or severity in ("ERROR", "CRITICAL")
+| summarize Count=count() by eventType, severity
+| where Count > 0

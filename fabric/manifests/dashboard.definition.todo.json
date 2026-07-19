@@ -1,0 +1,6 @@
+{
+  "displayName": "grizl-observability-dashboard",
+  "type": "KQLDashboard",
+  "todo": "TODO_REPLACE_AFTER_TENANT_EXPORT: Replace with an exported Fabric dashboard definition if/when Fabric supports stable import/export for this item type.",
+  "kqlSourceOfTruth": "kql/grizl-dashboard-tiles.kql"
+}

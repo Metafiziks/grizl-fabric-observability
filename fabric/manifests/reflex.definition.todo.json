@@ -1,0 +1,6 @@
+{
+  "displayName": "GRIZL Alerts",
+  "type": "Reflex",
+  "todo": "TODO_REPLACE_AFTER_TENANT_EXPORT: Replace with an exported Reflex/Activator definition if/when Fabric exposes stable API or Git import/export for this item type.",
+  "kqlSourceOfTruth": "kql/grizl-activator-alerts.kql"
+}

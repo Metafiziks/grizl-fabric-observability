@@ -1,0 +1,241 @@
+// =============================================================================
+// GRIZL-007: Real-Time Dashboard Tile Queries — grizl-house KQL Database
+// Source table: RawLogs (source-of-truth landing table)
+// Workspace: grizl-stream  |  Eventhouse: grizl-house
+// =============================================================================
+// How to use:
+//   1. Open the Real-Time Dashboard in the grizl-stream Fabric workspace.
+//   2. For each tile, click "Add tile" → "KQL query" → select grizl-house.
+//   3. Paste the query for that tile from the relevant section below.
+//   4. Set the tile title and visualization type as indicated.
+//   5. Save the tile.
+//
+// Note: Queries use the KQL functions confirmed in Fabric:
+//   HttpRequests(), FrontendTelemetry(), ApplicationErrors(),
+//   Deployments(), ForwarderHealth()
+// These functions must exist in grizl-house before the dashboard can be built.
+// Function definitions: kql/grizl-observability.kql (LOGICAL VIEW DEFINITIONS)
+//
+// Note: RawLogs has no top-level "message" column.
+//   Forwarder health signals use eventType and errorMessage instead.
+// =============================================================================
+
+
+// ── TILE 1: Events by service / event type / severity ─────────────────────────
+// Title:       Events by service / event type / severity
+// Visual type: Table
+// Purpose:     Pipeline health overview — confirms all services and event types
+//              are landing in RawLogs. Useful as the first tile for a quick
+//              sanity check that the full pipeline (Cloud Run → Pub/Sub →
+//              grizl-log-forwarder → Eventhouse) is flowing.
+
+RawLogs
+| summarize Count=count() by service, eventType, severity
+| order by Count desc
+
+
+// ── TILE 2: HTTP request volume over time ─────────────────────────────────────
+// Title:       HTTP request volume over time
+// Visual type: Time chart (line) — X axis: ingestTimestamp, Y axis: Requests
+// Purpose:     Backend traffic trend. A sudden drop or spike signals an anomaly.
+
+HttpRequests()
+| where ingestTimestamp > ago(6h)
+| summarize Requests=count() by bin(ingestTimestamp, 5m), service
+| order by ingestTimestamp asc
+
+
+// ── TILE 3: HTTP error rate over time ─────────────────────────────────────────
+// Title:       HTTP error rate over time
+// Visual type: Time chart (line) — X axis: ingestTimestamp, Y axis: Error4xx / Error5xx
+// Purpose:     4xx and 5xx error rates over time. Useful for spotting regressions
+//              immediately after a deployment.
+
+HttpRequests()
+| where ingestTimestamp > ago(6h)
+| summarize
+    Requests = count(),
+    Errors4xx = countif(statusCode >= 400 and statusCode < 500),
+    Errors5xx = countif(statusCode >= 500)
+  by bin(ingestTimestamp, 5m), service
+| order by ingestTimestamp asc
+
+
+// ── TILE 4: Top backend routes by error count ─────────────────────────────────
+// Title:       Top backend routes by error count (last 24 h)
+// Visual type: Bar chart — X axis: route, Y axis: ErrorCount
+// Purpose:     Ranks backend routes by error count. Identifies specific endpoints
+//              that are failing most frequently.
+
+HttpRequests()
+| where ingestTimestamp > ago(24h)
+  and (statusCode >= 400 or severity in ("ERROR", "CRITICAL"))
+| summarize ErrorCount=count() by route, statusCode, service
+| order by ErrorCount desc
+| take 20
+
+
+// ── TILE 5: Recent application errors ─────────────────────────────────────────
+// Title:       Recent application errors
+// Visual type: Table
+// Purpose:     Live feed of the most recent ERROR/CRITICAL events. First tile
+//              to check during incident triage.
+
+ApplicationErrors()
+| project ingestTimestamp, service, environment, severity,
+          eventType, errorType, errorMessage, errorSignature,
+          route, deploymentSha, traceId, requestId
+| order by ingestTimestamp desc
+| take 50
+
+
+// ── TILE 6: Application errors by signature ───────────────────────────────────
+// Title:       Application errors by signature (last 24 h)
+// Visual type: Bar chart — X axis: errorSignature, Y axis: Count
+// Purpose:     Groups errors by their stable errorSignature (<errorType>:<route>).
+//              Distinguishes new one-off errors from recurring known issues.
+
+ApplicationErrors()
+| where ingestTimestamp > ago(24h)
+  and isnotempty(errorSignature)
+| summarize Count=count(), LastSeen=max(ingestTimestamp)
+  by errorSignature, errorType, service
+| order by Count desc
+| take 25
+
+
+// ── TILE 7: Frontend telemetry errors by page ─────────────────────────────────
+// Title:       Frontend telemetry errors by page (last 24 h)
+// Visual type: Bar chart — X axis: page, Y axis: Errors
+// Purpose:     Shows which browser pages generate the most errors, broken down
+//              by errorType and eventType. Use to prioritise frontend bug fixes.
+
+FrontendTelemetry()
+| where ingestTimestamp > ago(24h)
+  and severity in ("ERROR", "CRITICAL")
+| summarize Errors=count() by page, errorType, eventType
+| order by Errors desc
+| take 25
+
+
+// ── TILE 8: Recent frontend telemetry feed ────────────────────────────────────
+// Title:       Recent frontend telemetry feed
+// Visual type: Table
+// Purpose:     Live feed of all recent browser events. Confirms that the
+//              /api/telemetry ingestion path is working and shows what the
+//              browser is reporting in real time.
+
+FrontendTelemetry()
+| project ingestTimestamp, severity, eventType, page,
+          apiStatus, errorType, errorMessage, source
+| order by ingestTimestamp desc
+| take 50
+
+
+// ── TILE 9: Deployment timeline ───────────────────────────────────────────────
+// Title:       Deployment timeline (last 30 days)
+// Visual type: Table
+// Purpose:     Lists all deployments ordered by time. Use as a reference when
+//              correlating error spikes with specific deploys.
+
+Deployments()
+| where ingestTimestamp > ago(30d)
+| project ingestTimestamp, service, environment, deploymentSha, severity
+| order by ingestTimestamp desc
+
+
+// ── TILE 10: Errors by deployment SHA ─────────────────────────────────────────
+// Title:       Errors by deployment SHA
+// Visual type: Table
+// Purpose:     Joins error counts to each deployment SHA across all services.
+//              A SHA with a sharply higher error rate indicates a regression
+//              introduced by that deployment.
+
+let deployments =
+    Deployments()
+    | summarize DeployedAt=min(ingestTimestamp) by deploymentSha, service;
+let errorsByDeploy =
+    ApplicationErrors()
+    | where isnotempty(deploymentSha)
+    | summarize
+        TotalErrors  = count(),
+        ErrorTypes   = dcount(errorType)
+      by deploymentSha, service;
+let frontendErrorsByDeploy =
+    FrontendTelemetry()
+    | where severity in ("ERROR", "CRITICAL")
+      and isnotempty(deploymentSha)
+    | summarize FrontendErrors=count() by deploymentSha, service;
+deployments
+| join kind=leftouter errorsByDeploy       on deploymentSha, service
+| join kind=leftouter frontendErrorsByDeploy on deploymentSha, service
+| extend
+    TotalErrors    = coalesce(TotalErrors, 0),
+    FrontendErrors = coalesce(FrontendErrors, 0)
+| project DeployedAt, service, deploymentSha,
+          TotalErrors, FrontendErrors, ErrorTypes
+| order by DeployedAt desc
+| take 20
+
+
+// ── TILE 11: Forwarder alive check ────────────────────────────────────────────
+// Title:       Forwarder alive check
+// Visual type: Table
+// Purpose:     Shows the most recent forwarder_start, batch_sent, and batch_acked
+//              events. A stale timestamp here means the forwarder may be down or
+//              disconnected from Pub/Sub / Eventhouse.
+// Note:        No top-level "message" column in RawLogs; use eventType and
+//              errorMessage to identify health signals.
+
+ForwarderHealth()
+| where eventType in ("forwarder_start", "batch_sent", "batch_acked",
+                      "health_check", "ready_check")
+| project ingestTimestamp, severity, eventType, errorMessage
+| order by ingestTimestamp desc
+| take 25
+
+
+// ── TILE 12: Forwarder skipped / failure events ───────────────────────────────
+// Title:       Forwarder skipped / failure events (last 24 h)
+// Visual type: Table
+// Purpose:     Surfaces message_skipped, batch_retry, batch_nack, batch_failed,
+//              and ERROR/CRITICAL events. Use to investigate delivery gaps or
+//              message loss.
+// Note:        rawEnvelope contains the raw Pub/Sub envelope for skipped messages,
+//              which can help diagnose why a message was dropped.
+
+ForwarderHealth()
+| where ingestTimestamp > ago(24h)
+  and (eventType in ("message_skipped", "batch_retry", "batch_nack", "batch_failed")
+       or severity in ("ERROR", "CRITICAL"))
+| project ingestTimestamp, severity, eventType, errorMessage, rawEnvelope
+| order by ingestTimestamp desc
+| take 50
+
+
+// =============================================================================
+// VALIDATION QUERIES
+// Run these in the Fabric KQL editor to confirm data is flowing before
+// building the dashboard.
+// =============================================================================
+
+// -- Pipeline data present
+RawLogs
+| summarize Count=count() by service, eventType, severity
+| order by Count desc
+
+// -- Spot-check each function
+HttpRequests()
+| take 10
+
+FrontendTelemetry()
+| take 10
+
+ApplicationErrors()
+| take 10
+
+Deployments()
+| take 10
+
+ForwarderHealth()
+| take 10

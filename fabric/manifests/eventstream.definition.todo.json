@@ -1,0 +1,11 @@
+{
+  "displayName": "grizl-events",
+  "type": "Eventstream",
+  "todo": "TODO_REPLACE_AFTER_TENANT_EXPORT: Export the live Eventstream item definition with fabric/scripts/export-items.sh, then replace this placeholder with the verified custom source and routing topology. Do not invent source/destination JSON.",
+  "requiredManualTopology": {
+    "customSourceName": "GRIZL-Source",
+    "protocol": "Event Hub",
+    "authentication": "SAS Key Authentication",
+    "destination": "grizl-house/RawLogs"
+  }
+}

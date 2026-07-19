@@ -1,0 +1,22 @@
+{
+  "name": "@grizl/fabric-provisioning",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GRIZL Microsoft Fabric provisioning, export, teardown, and Data Agent scaffolding.",
+  "license": "UNLICENSED",
+  "scripts": {
+    "check": "bash scripts/check.sh",
+    "preflight": "bash scripts/preflight.sh",
+    "provision:dry-run": "bash scripts/provision.sh --dry-run --all",
+    "provision": "bash scripts/provision.sh --all",
+    "export": "bash scripts/export-items.sh",
+    "eventstream:import:dry-run": "bash scripts/import-eventstream-definition.sh --dry-run --definition fabric/manifests/eventstream.getDefinition.example.json",
+    "data-agent:datasource:dry-run": "bash scripts/data-agent-staging.sh datasource-add --dry-run",
+    "data-agent:publish:dry-run": "bash scripts/data-agent-staging.sh publish --dry-run",
+    "kusto:show-tables:dry-run": "bash scripts/kusto-mgmt.sh --dry-run --command '.show tables'",
+    "kusto:anomaly-signals:dry-run": "bash scripts/kusto-mgmt.sh --dry-run --file kql/grizl-anomaly-signals.kql",
+    "kusto:anomaly-signals": "bash scripts/kusto-mgmt.sh --file kql/grizl-anomaly-signals.kql --yes",
+    "teardown:dry-run": "bash scripts/teardown.sh --dry-run",
+    "teardown": "bash scripts/teardown.sh"
+  }
+}

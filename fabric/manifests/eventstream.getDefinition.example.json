@@ -1,0 +1,21 @@
+{
+  "definition": {
+    "parts": [
+      {
+        "path": "eventstream.json",
+        "payloadType": "InlineBase64",
+        "payload": "ewogICJzb3VyY2VzIjogWwogICAgewogICAgICAiaWQiOiAic291cmNlLWlkLXBsYWNlaG9sZGVyIiwKICAgICAgIm5hbWUiOiAiR1JJWkwtU291cmNlIiwKICAgICAgInR5cGUiOiAiQ3VzdG9tRW5kcG9pbnQiCiAgICB9CiAgXSwKICAiZGVzdGluYXRpb25zIjogWwogICAgewogICAgICAiaWQiOiAiZGVzdGluYXRpb24taWQtcGxhY2Vob2xkZXIiLAogICAgICAidHlwZSI6ICJFdmVudGhvdXNlIiwKICAgICAgInByb3BlcnRpZXMiOiB7CiAgICAgICAgIndvcmtzcGFjZUlkIjogIm9sZC13b3Jrc3BhY2UtcGxhY2Vob2xkZXIiLAogICAgICAgICJpdGVtSWQiOiAib2xkLWtxbC1wbGFjZWhvbGRlciIsCiAgICAgICAgInRhYmxlTmFtZSI6ICJSYXdMb2dzIiwKICAgICAgICAiY29ubmVjdGlvbk5hbWUiOiAib2xkLWNvbm5lY3Rpb24tcGxhY2Vob2xkZXIiLAogICAgICAgICJtYXBwaW5nUnVsZU5hbWUiOiAiUmF3TG9nc01hcHBpbmciCiAgICAgIH0KICAgIH0KICBdLAogICJzdHJlYW1zIjogW10sCiAgIm9wZXJhdG9ycyI6IFtdCn0="
+      },
+      {
+        "path": "eventstreamProperties.json",
+        "payloadType": "InlineBase64",
+        "payload": "ewogICJyZXRlbnRpb25UaW1lSW5EYXlzIjogMSwKICAiZXZlbnRUaHJvdWdocHV0TGV2ZWwiOiAiTG93Igp9"
+      },
+      {
+        "path": ".platform",
+        "payloadType": "InlineBase64",
+        "payload": "ewogICIkc2NoZW1hIjogImh0dHBzOi8vZGV2ZWxvcGVyLm1pY3Jvc29mdC5jb20vanNvbi1zY2hlbWFzL2ZhYnJpYy9naXRJbnRlZ3JhdGlvbi9wbGF0Zm9ybVByb3BlcnRpZXMvMi4wLjAvc2NoZW1hLmpzb24iLAogICJtZXRhZGF0YSI6IHsKICAgICJ0eXBlIjogIkV2ZW50c3RyZWFtIiwKICAgICJkaXNwbGF5TmFtZSI6ICJncml6bC1ldmVudHMiCiAgfQp9"
+      }
+    ]
+  }
+}
