@@ -1,0 +1,16 @@
+{
+  "examples": [
+    {
+      "utterance": "Which route and deployment are associated with the latest repeated Mongo timeout?",
+      "response": "Query RawLogs or ApplicationErrors() for recent MongoTimeoutError rows, group by route and deploymentSha, and return the latest timestamp, count, route, and deployment SHA."
+    },
+    {
+      "utterance": "Is the forwarder stale?",
+      "response": "Use ForwarderHealth() to find the most recent forwarder event and compare it with now(); include MinutesSinceLastSeen and recent failure events."
+    },
+    {
+      "utterance": "Show frontend API error spikes by page.",
+      "response": "Use FrontendTelemetry() filtered to api_error or ERROR/CRITICAL rows, summarize by page, apiStatus, and errorType over the requested time window."
+    }
+  ]
+}

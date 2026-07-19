@@ -1,0 +1,32 @@
+{
+  "note": "Public sanitized template. Replace placeholders with values from your own Microsoft Fabric workspace and Eventstream UI. Do not commit secrets or connection strings.",
+  "tenantId": "<FABRIC_TENANT_ID>",
+  "workspace": {
+    "name": "<FABRIC_WORKSPACE_NAME>",
+    "id": "<FABRIC_WORKSPACE_ID>"
+  },
+  "eventhouse": {
+    "name": "<FABRIC_EVENTHOUSE_NAME>",
+    "id": "<FABRIC_EVENTHOUSE_ID>"
+  },
+  "kqlDatabase": {
+    "name": "<FABRIC_KQL_DATABASE_NAME>",
+    "id": "<FABRIC_KQL_DATABASE_ID>",
+    "queryServiceUri": "https://<cluster>.<region>.kusto.fabric.microsoft.com"
+  },
+  "eventstream": {
+    "name": "<FABRIC_EVENTSTREAM_NAME>",
+    "sourceName": "<FABRIC_EVENTSTREAM_SOURCE_NAME>",
+    "eventHubEntityName": "<FABRIC_EVENTHUB_NAME>",
+    "sharedAccessKeyName": "<FABRIC_EVENTHUB_SHARED_ACCESS_KEY_NAME>"
+  },
+  "dashboard": {
+    "name": "<FABRIC_DASHBOARD_NAME>"
+  },
+  "activator": {
+    "name": "<FABRIC_REFLEX_NAME>"
+  },
+  "dataAgent": {
+    "name": "<FABRIC_DATA_AGENT_NAME>"
+  }
+}

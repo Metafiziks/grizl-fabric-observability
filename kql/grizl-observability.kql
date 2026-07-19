@@ -1,0 +1,443 @@
+// =============================================================================
+// GRIZL-006: Operational Analytics — grizl-house KQL Database
+// Source table: RawLogs (source-of-truth landing table)
+// Workspace: grizl-stream  |  Eventhouse: grizl-house
+// =============================================================================
+// How to use:
+//   Copy individual sections into the Fabric Eventhouse KQL query editor.
+//   Each section is a standalone, runnable query.
+//   Section headers begin with "// ── <Name>" for easy navigation.
+// =============================================================================
+
+
+// ── 1. SUMMARY ────────────────────────────────────────────────────────────────
+// Events by service, eventType, and severity — useful as a dashboard overview
+// tile or a quick sanity-check that all expected event types are landing.
+
+RawLogs
+| summarize Count=count() by service, eventType, severity
+| order by Count desc
+
+
+// ── 2. HTTP REQUESTS ──────────────────────────────────────────────────────────
+// All backend HTTP request events from any service.
+
+RawLogs
+| where eventType == "http_request"
+| project ingestTimestamp, service, environment, severity,
+          method, route, statusCode, durationMs, traceId, requestId, deploymentSha
+| order by ingestTimestamp desc
+| take 100
+
+// -- HTTP requests from the backend only
+RawLogs
+| where eventType == "http_request"
+  and service == "grizl-backend"
+| project ingestTimestamp, method, route, statusCode, durationMs, traceId, requestId
+| order by ingestTimestamp desc
+| take 100
+
+// -- HTTP 5xx errors over time (5-minute buckets)
+RawLogs
+| where eventType == "http_request"
+  and statusCode >= 500
+| summarize ErrorCount=count() by bin(ingestTimestamp, 5m), service
+| order by ingestTimestamp desc
+
+// -- HTTP request volume and error rate over time (5-minute buckets)
+RawLogs
+| where eventType == "http_request"
+| summarize
+    Requests = count(),
+    Errors5xx = countif(statusCode >= 500),
+    Errors4xx = countif(statusCode >= 400 and statusCode < 500)
+  by bin(ingestTimestamp, 5m), service
+| extend ErrorRate = todouble(Errors5xx) / todouble(Requests)
+| order by ingestTimestamp desc
+
+// -- Slowest routes (P95 latency, last 24 h)
+RawLogs
+| where eventType == "http_request"
+  and ingestTimestamp > ago(24h)
+  and isnotempty(durationMs)
+| summarize P95Ms=percentile(todouble(durationMs), 95), RequestCount=count()
+  by route, service
+| order by P95Ms desc
+| take 25
+
+// -- Top routes by request volume (last 24 h)
+RawLogs
+| where eventType == "http_request"
+  and ingestTimestamp > ago(24h)
+| summarize Requests=count() by route, method, service
+| order by Requests desc
+| take 25
+
+
+// ── 3. APPLICATION ERRORS ─────────────────────────────────────────────────────
+// All ERROR and CRITICAL severity events across all services.
+
+RawLogs
+| where severity in ("ERROR", "CRITICAL")
+| project ingestTimestamp, service, environment, severity,
+          eventType, errorType, errorMessage, errorSignature,
+          route, traceId, requestId, deploymentSha
+| order by ingestTimestamp desc
+| take 50
+
+// -- Error rate by service over time (5-minute buckets)
+RawLogs
+| summarize
+    Errors = countif(severity in ("ERROR", "CRITICAL")),
+    Total  = count()
+  by bin(ingestTimestamp, 5m), service
+| extend ErrorRate = todouble(Errors) / todouble(Total)
+| order by ingestTimestamp desc
+
+// -- Top failing routes (last 24 h)
+RawLogs
+| where severity in ("ERROR", "CRITICAL")
+  and ingestTimestamp > ago(24h)
+  and isnotempty(route)
+| summarize Errors=count(), DistinctTypes=dcount(errorType) by route, service
+| order by Errors desc
+| take 25
+
+// -- Error signature frequency (last 24 h) — for stable grouping in dashboards
+RawLogs
+| where severity in ("ERROR", "CRITICAL")
+  and ingestTimestamp > ago(24h)
+  and isnotempty(errorSignature)
+| summarize Count=count(), LastSeen=max(ingestTimestamp) by errorSignature, service
+| order by Count desc
+| take 25
+
+
+// ── 4. FRONTEND TELEMETRY ─────────────────────────────────────────────────────
+// Events emitted by the browser via POST /api/telemetry (service=grizl-frontend).
+
+RawLogs
+| where service == "grizl-frontend"
+| project ingestTimestamp, severity, eventType,
+          page, apiStatus, errorType, errorMessage, source
+| order by ingestTimestamp desc
+| take 25
+
+// -- Frontend API errors by page (last 24 h)
+RawLogs
+| where service == "grizl-frontend"
+  and severity in ("ERROR", "CRITICAL")
+  and ingestTimestamp > ago(24h)
+| summarize Errors=count() by page, errorType, apiStatus
+| order by Errors desc
+| take 25
+
+// -- Frontend telemetry volume over time (1-hour buckets)
+RawLogs
+| where service == "grizl-frontend"
+| summarize Events=count(), Errors=countif(severity in ("ERROR", "CRITICAL"))
+  by bin(ingestTimestamp, 1h)
+| order by ingestTimestamp desc
+
+
+// ── 5. DEPLOYMENTS ────────────────────────────────────────────────────────────
+// Deployment metadata events emitted at container startup.
+
+RawLogs
+| where eventType == "deployment"
+| project ingestTimestamp, service, environment, deploymentSha, severity
+| order by ingestTimestamp desc
+| take 25
+
+// -- Deployment timeline (last 30 days)
+RawLogs
+| where eventType == "deployment"
+  and ingestTimestamp > ago(30d)
+| project ingestTimestamp, service, environment, deploymentSha
+| order by ingestTimestamp desc
+
+// -- Errors by deployment SHA — correlation view
+RawLogs
+| where isnotempty(deploymentSha)
+| summarize
+    Total  = count(),
+    Errors = countif(severity in ("ERROR", "CRITICAL"))
+  by deploymentSha, service
+| extend ErrorRate = todouble(Errors) / todouble(Total)
+| order by Errors desc, Total desc
+| take 25
+
+// -- Recent deployments with their post-deploy error counts
+let deployments =
+    RawLogs
+    | where eventType == "deployment"
+    | summarize DeployedAt=min(ingestTimestamp) by deploymentSha, service;
+let errorsByDeploy =
+    RawLogs
+    | where severity in ("ERROR", "CRITICAL")
+      and isnotempty(deploymentSha)
+    | summarize PostDeployErrors=count() by deploymentSha, service;
+deployments
+| join kind=leftouter errorsByDeploy on deploymentSha, service
+| extend PostDeployErrors = coalesce(PostDeployErrors, 0)
+| order by DeployedAt desc
+| take 20
+
+
+// ── 6. FORWARDER HEALTH ───────────────────────────────────────────────────────
+// Log forwarder (grizl-log-forwarder) operational events.
+// The forwarder emits structured logs to Cloud Logging → RawLogs.
+// Note: RawLogs has no top-level "message" column. Use eventType, errorMessage,
+// and rawEnvelope to identify forwarder health signals.
+// Key eventType values: "forwarder_start", "batch_sent", "batch_acked",
+//                       "message_skipped", "forwarder_shutdown"
+
+RawLogs
+| where service == "grizl-log-forwarder"
+| project ingestTimestamp, severity, eventType, errorMessage, rawEnvelope
+| order by ingestTimestamp desc
+| take 50
+
+// -- Is the forwarder alive? (last heartbeat / startup event)
+RawLogs
+| where service == "grizl-log-forwarder"
+  and eventType in ("forwarder_start", "health_check", "ready_check")
+| project ingestTimestamp, severity, eventType, errorMessage
+| order by ingestTimestamp desc
+| take 10
+
+// -- Batch send activity (last 24 h)
+RawLogs
+| where service == "grizl-log-forwarder"
+  and ingestTimestamp > ago(24h)
+  and eventType in ("batch_sent", "batch_acked")
+| project ingestTimestamp, severity, eventType, errorMessage
+| order by ingestTimestamp desc
+| take 50
+
+// -- Skipped messages (last 24 h)
+RawLogs
+| where service == "grizl-log-forwarder"
+  and ingestTimestamp > ago(24h)
+  and eventType == "message_skipped"
+| project ingestTimestamp, severity, eventType, errorMessage, rawEnvelope
+| order by ingestTimestamp desc
+| take 50
+
+// -- Retry and failure events (last 24 h)
+RawLogs
+| where service == "grizl-log-forwarder"
+  and ingestTimestamp > ago(24h)
+  and (severity in ("ERROR", "CRITICAL")
+       or eventType in ("batch_retry", "batch_nack", "batch_failed"))
+| project ingestTimestamp, severity, eventType, errorMessage
+| order by ingestTimestamp desc
+| take 50
+
+// -- SIGTERM / shutdown events
+RawLogs
+| where service == "grizl-log-forwarder"
+  and eventType == "forwarder_shutdown"
+| project ingestTimestamp, severity, eventType, errorMessage
+| order by ingestTimestamp desc
+| take 10
+
+// -- Forwarder skip rate (batches sent vs skipped, last 24 h)
+RawLogs
+| where service == "grizl-log-forwarder"
+  and ingestTimestamp > ago(24h)
+| summarize
+    BatchesSent     = countif(eventType == "batch_sent"),
+    MessagesSkipped = countif(eventType == "message_skipped"),
+    Errors          = countif(severity in ("ERROR", "CRITICAL"))
+  by bin(ingestTimestamp, 15m)
+| order by ingestTimestamp desc
+
+
+// ── 7. ERROR RATES BY SERVICE ─────────────────────────────────────────────────
+// Error rate trend per service over time.
+
+RawLogs
+| where ingestTimestamp > ago(24h)
+| summarize
+    Total  = count(),
+    Errors = countif(severity in ("ERROR", "CRITICAL"))
+  by bin(ingestTimestamp, 5m), service
+| extend ErrorRate = round(todouble(Errors) / todouble(Total), 4)
+| order by ingestTimestamp desc
+
+// -- Current error rate snapshot (last 1 h)
+RawLogs
+| where ingestTimestamp > ago(1h)
+| summarize
+    Total  = count(),
+    Errors = countif(severity in ("ERROR", "CRITICAL"))
+  by service
+| extend ErrorRate = round(todouble(Errors) / todouble(Total), 4)
+| order by Errors desc
+
+
+// ── 8. ERRORS BY DEPLOYMENT SHA ───────────────────────────────────────────────
+// Correlate error spikes with specific deployments.
+
+RawLogs
+| where isnotempty(deploymentSha)
+| summarize
+    Count  = count(),
+    Errors = countif(severity in ("ERROR", "CRITICAL"))
+  by deploymentSha, service
+| extend ErrorRate = round(todouble(Errors) / todouble(Count), 4)
+| order by Errors desc, Count desc
+
+// -- Errors per SHA over time (useful after a hotfix deploy)
+RawLogs
+| where isnotempty(deploymentSha)
+  and severity in ("ERROR", "CRITICAL")
+  and ingestTimestamp > ago(7d)
+| summarize Errors=count() by bin(ingestTimestamp, 1h), deploymentSha, service
+| order by ingestTimestamp desc
+
+
+// ── 9. RECENT CRITICAL/ERROR EVENTS ──────────────────────────────────────────
+// Last 50 high-severity events across all services — good for an alert feed tile.
+
+RawLogs
+| where severity in ("ERROR", "CRITICAL")
+| project ingestTimestamp, service, environment, severity,
+          eventType, errorType, errorMessage, route, deploymentSha,
+          insertId, pubsubMessageId
+| order by ingestTimestamp desc
+| take 50
+
+// -- Critical events only (last 6 h)
+RawLogs
+| where severity == "CRITICAL"
+  and ingestTimestamp > ago(6h)
+| project ingestTimestamp, service, environment, severity,
+          eventType, errorType, errorMessage, route, deploymentSha
+| order by ingestTimestamp desc
+
+
+// ── 10. TOP FAILING ROUTES/PAGES ─────────────────────────────────────────────
+// Backend routes with the most errors (last 24 h).
+
+RawLogs
+| where ingestTimestamp > ago(24h)
+  and severity in ("ERROR", "CRITICAL")
+  and isnotempty(route)
+| summarize Errors=count() by route, service
+| order by Errors desc
+| take 20
+
+// -- Frontend pages with the most errors (last 24 h)
+RawLogs
+| where ingestTimestamp > ago(24h)
+  and service == "grizl-frontend"
+  and severity in ("ERROR", "CRITICAL")
+  and isnotempty(page)
+| summarize Errors=count() by page, errorType
+| order by Errors desc
+| take 20
+
+
+// ── LOGICAL VIEW DEFINITIONS (copy/paste into Fabric KQL Editor) ──────────────
+// These functions act as logical views on RawLogs.
+// Run each .create-or-alter block once in the grizl-house KQL database.
+// After creation, query them like tables: HttpRequests | take 100
+
+.create-or-alter function with (docstring="HTTP request events from RawLogs", folder="Views")
+HttpRequests() {
+    RawLogs
+    | where eventType == "http_request"
+    | project
+        ingestTimestamp,
+        sourceTimestamp,
+        service,
+        environment,
+        deploymentSha,
+        severity,
+        method,
+        route,
+        statusCode,
+        durationMs,
+        traceId,
+        requestId,
+        insertId,
+        pubsubMessageId
+}
+
+.create-or-alter function with (docstring="Application error events from RawLogs", folder="Views")
+ApplicationErrors() {
+    RawLogs
+    | where severity in ("ERROR", "CRITICAL")
+    | project
+        ingestTimestamp,
+        sourceTimestamp,
+        service,
+        environment,
+        deploymentSha,
+        severity,
+        eventType,
+        errorType,
+        errorMessage,
+        errorSignature,
+        route,
+        traceId,
+        requestId,
+        insertId,
+        pubsubMessageId
+}
+
+.create-or-alter function with (docstring="Frontend telemetry events from RawLogs", folder="Views")
+FrontendTelemetry() {
+    RawLogs
+    | where service == "grizl-frontend"
+    | project
+        ingestTimestamp,
+        sourceTimestamp,
+        service,
+        environment,
+        severity,
+        eventType,
+        page,
+        apiStatus,
+        errorType,
+        errorMessage,
+        source,
+        insertId,
+        pubsubMessageId
+}
+
+.create-or-alter function with (docstring="Deployment events from RawLogs", folder="Views")
+Deployments() {
+    RawLogs
+    | where eventType == "deployment"
+    | project
+        ingestTimestamp,
+        sourceTimestamp,
+        service,
+        environment,
+        deploymentSha,
+        severity,
+        insertId,
+        pubsubMessageId
+}
+
+.create-or-alter function with (docstring="Log forwarder health events from RawLogs", folder="Views")
+ForwarderHealth() {
+    // errorMessage: populated on error events and operational log lines
+    // rawEnvelope:  populated on message_skipped events — contains the raw Pub/Sub envelope
+    RawLogs
+    | where service == "grizl-log-forwarder"
+    | project
+        ingestTimestamp,
+        sourceTimestamp,
+        service,
+        environment,
+        severity,
+        eventType,
+        errorMessage,
+        rawEnvelope,
+        insertId,
+        pubsubMessageId
+}
