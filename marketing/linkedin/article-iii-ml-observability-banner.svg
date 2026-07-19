@@ -36,14 +36,13 @@
       <circle cx="251" cy="95" r="14" fill="#f472b6"/>
     </g>
     <text x="36" y="62" fill="#93c5fd" font-family="Menlo, Consolas, monospace" font-size="20" letter-spacing="2">DRIFT WATCH</text>
-    <text x="36" y="314" fill="#e0f2fe" font-family="Menlo, Consolas, monospace" font-size="18">isolation_forest: alert</text>
   </g>
   <g transform="translate(72 76)">
     <text x="0" y="0" fill="#67e8f9" font-family="Menlo, Consolas, monospace" font-size="24" letter-spacing="4">PART III / ML OBSERVABILITY</text>
     <text x="0" y="112" fill="#f8fafc" font-family="Georgia, 'Times New Roman', serif" font-weight="800" font-size="70" letter-spacing="-3">EVALS PASSED.</text>
     <text x="0" y="190" fill="#f8fafc" font-family="Georgia, 'Times New Roman', serif" font-weight="800" font-size="70" letter-spacing="-3">PRODUCTION</text>
     <text x="0" y="268" fill="#f8fafc" font-family="Georgia, 'Times New Roman', serif" font-weight="800" font-size="70" letter-spacing="-3">STILL DRIFTED.</text>
-    <text x="4" y="334" fill="#bae6fd" font-family="Menlo, Consolas, monospace" font-size="25">Isolation Forest. HHEM. KQL. BigQuery. Telemetry with teeth.</text>
+    <text x="4" y="334" fill="#bae6fd" font-family="Menlo, Consolas, monospace" font-size="25">Isolation Forest. HHEM. KQL. Drift.</text>
   </g>
   <g transform="translate(75 514)">
     <rect x="0" y="0" width="356" height="52" rx="26" fill="#67e8f9"/>
