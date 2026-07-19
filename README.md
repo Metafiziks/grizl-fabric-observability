@@ -12,6 +12,29 @@ This repository contains only the public/shareable Fabric layer:
 
 No tenant secrets, Event Hubs connection strings, Fabric tokens, GitHub tokens, or live tenant IDs are included. Replace placeholder values such as `<FABRIC_TENANT_ID>`, `<FABRIC_WORKSPACE_ID>`, and `<FABRIC_EVENTHUB_NAME>` with values from your own tenant.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    app["Apps / services<br/>structured logs"] --> logging["Cloud logging<br/>or equivalent sink"]
+    logging --> forwarder["Log forwarder<br/>Cloud Run or worker"]
+    forwarder --> eventstream["Microsoft Fabric Eventstream<br/>Event Hubs-compatible source"]
+    eventstream --> rawlogs["Eventhouse KQL database<br/>RawLogs"]
+
+    rawlogs --> views["Logical KQL views<br/>HttpRequests, ApplicationErrors,<br/>Deployments, ForwarderHealth"]
+    views --> dashboards["Real-Time Dashboard<br/>operational triage"]
+    views --> anomaly["KQL anomaly functions<br/>series_decompose_anomalies()"]
+    anomaly --> activator["Fabric Activator / Reflex<br/>alert trigger"]
+    activator --> webhook["Incident webhook<br/>external orchestrator"]
+    webhook --> issue["GitHub issue<br/>evidence + anomaly fields"]
+    issue --> copilot["Optional Copilot remediation<br/>policy gated"]
+
+    classDef fabric fill:#eef6ff,stroke:#3b82f6,color:#111827;
+    classDef external fill:#f8fafc,stroke:#64748b,color:#111827;
+    class eventstream,rawlogs,views,dashboards,anomaly,activator fabric;
+    class app,logging,forwarder,webhook,issue,copilot external;
+```
+
 ## What is included
 
 The KQL artifacts assume a `RawLogs` Eventhouse table populated from structured application logs. The package provides:
