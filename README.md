@@ -97,6 +97,23 @@ The anomaly-signal layer intentionally covers high-value production signals only
 | `PostDeploymentRegressionAnomalies()` | post-deployment regressions by `deploymentSha` |
 | `GrizlRecentAnomalySignals()` | union query suitable for a single Activator trigger |
 
+## Fabric vs Databricks substitutions
+
+The companion repo [grizl-databricks-observability](https://github.com/Metafiziks/grizl-databricks-observability) implements the same architecture on the Databricks/GCP stack. The table below maps each Fabric component to its Databricks equivalent for teams running one or both platforms.
+
+| Fabric | Databricks |
+|---|---|
+| Cloud Logging → Pub/Sub → Fabric Eventstream | Cloud Logging → Pub/Sub → Cloud Storage export subscription → Auto Loader |
+| `RawLogs` Eventhouse table | `grizl.observability.raw_logs` Delta table (Unity Catalog) |
+| KQL logical functions (`HttpRequests()`, `ApplicationErrors()`, …) | SQL logical views (`http_requests`, `application_errors`, …) |
+| `series_decompose_anomalies()` | z-score via `STDDEV`/`AVG` over `FLOOR(UNIX_TIMESTAMP/300)*300` time bins |
+| Fabric Activator / Reflex alert trigger | Databricks Workflow (5-min cron) |
+| Fabric Data Agent (MCP) | Genie (AI/BI) — natural language → SQL over Delta tables |
+| Direct Kusto fallback | Spark SQL / SQL warehouse fallback |
+| Real-Time Dashboard | Databricks SQL Dashboard |
+| Entra M2M client credentials | Databricks OAuth M2M (service principal) |
+| External orchestrator webhook → GitHub issue | Workflow notebook calls GitHub API directly — no external webhook |
+
 ## Quick start
 
 1. Copy the config template and fill in tenant-specific non-secret values:
