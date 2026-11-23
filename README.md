@@ -165,3 +165,7 @@ Data Agent does not create issues or execute remediation. The external orchestra
 - Do not commit Event Hubs-compatible connection strings or SAS keys.
 - Keep Fabric service-principal secrets, webhook secrets, and GitHub tokens in your secret manager.
 - `fabric/scripts/check.sh` scans `fabric/` for Event Hubs connection-string material as a local guardrail.
+
+## License
+
+The code is released under the [MIT License](LICENSE). The Metafizik name and logo, and the articles and images under `marketing/`, are copyright Metafiziks and are not covered by that license.
